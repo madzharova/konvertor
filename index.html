@@ -190,7 +190,8 @@ tr.band-start td{border-top:2px solid var(--ink)}
     <div class="bands" id="bands"></div>
     <div class="row">
       <h2 style="flex:1">Пълна таблица</h2>
-      <button class="btn ghost" id="copyTable" type="button">Копирай таблицата</button>
+      <button class="btn ghost" id="copyTable" type="button">Копирай</button>
+      <button class="btn" id="xlsTable" type="button">Свали в Excel</button>
     </div>
     <div class="tablewrap"><table id="fullTable"></table></div>
     <p class="note">Стъпката на таблицата е същата като стъпката за точките по-горе.</p>
@@ -224,7 +225,8 @@ tr.band-start td{border-top:2px solid var(--ink)}
     <div class="dist" id="classDist"></div>
     <div class="row">
       <h2 style="flex:1">Резултати</h2>
-      <button class="btn ghost" id="copyClass" type="button">Копирай резултатите</button>
+      <button class="btn ghost" id="copyClass" type="button">Копирай</button>
+      <button class="btn" id="xlsClass" type="button">Свали в Excel</button>
     </div>
     <div class="tablewrap"><table id="classTable"></table></div>
   </section>
@@ -352,7 +354,7 @@ tr.band-start td{border-top:2px solid var(--ink)}
     return out;
   }
 
-  let tableTSV = "";
+  let tableTSV = "", tableRows = [], classRows = [], classStats = null;
   function renderTable(){
     const m = MODELS.find(x=>x.id===state.model), pts = pointList();
     const rows = pts.map(p=>{ const g=gradeOf(m,p,state.max); return {p, g, w:whole(g)}; });
@@ -361,11 +363,12 @@ tr.band-start td{border-top:2px solid var(--ink)}
     $("bands").innerHTML = groups.slice().reverse().map(gr=>
       `<span class="pill" style="background:${color(gr.w)}">${gr.w}</span><span>${WORDS[gr.w]}: ${fmtPts(gr.from)}${gr.to!==gr.from?" – "+fmtPts(gr.to):""} т.</span>`).join("");
     let html = "<thead><tr><th>Точки</th><th>%</th><th>Оценка</th><th></th></tr></thead><tbody>";
-    tableTSV = "Точки\t%\tОценка\tС думи\n"; let prevW=null;
+    tableTSV = "Точки\t%\tОценка\tС думи\n"; tableRows = []; let prevW=null;
     rows.slice().reverse().forEach(r=>{
       const pct = fmt(r.p/state.max*100,1);
       html += `<tr${prevW!==null&&prevW!==r.w?' class="band-start"':""}><td>${fmtPts(r.p)}</td><td>${pct}</td><td style="color:${color(r.w)};font-weight:600">${fmt(r.g)}</td><td>${WORDS[r.w]} ${r.w}</td></tr>`;
       tableTSV += `${fmtPts(r.p)}\t${pct}\t${fmt(r.g)}\t${WORDS[r.w]} ${r.w}\n`;
+      tableRows.push([r.p, Math.round(r.p/state.max*1000)/10, r.g, WORDS[r.w]+" "+r.w]);
       prevW=r.w;
     });
     $("fullTable").innerHTML = html + "</tbody>";
@@ -387,7 +390,7 @@ tr.band-start td{border-top:2px solid var(--ink)}
     const ok = list.filter(e=>isFinite(e.pts) && e.pts>=0 && e.pts<=state.max);
     const counts={2:0,3:0,4:0,5:0,6:0}; let sumG=0, sumWhole=0;
     let html="<thead><tr><th>№</th><th>Ученик</th><th>Точки</th><th>%</th><th>Оценка</th><th></th></tr></thead><tbody>";
-    classTSV="№\tУченик\tТочки\t%\tОценка\tС думи\n";
+    classTSV="№\tУченик\tТочки\t%\tОценка\tС думи\n"; classRows = [];
     list.forEach((e,i)=>{
       const bad = !(isFinite(e.pts) && e.pts>=0 && e.pts<=state.max);
       if (bad){ html+=`<tr><td>${i+1}</td><td>${esc(e.name)}</td><td>${fmtPts(e.pts)}</td><td colspan="3" style="color:var(--g2)">над максимума</td></tr>`; return; }
@@ -395,9 +398,10 @@ tr.band-start td{border-top:2px solid var(--ink)}
       const pct=fmt(e.pts/state.max*100,1);
       html+=`<tr><td>${i+1}</td><td>${esc(e.name)}</td><td>${fmtPts(e.pts)}</td><td>${pct}</td><td style="color:${color(w)};font-weight:600">${fmt(g)}</td><td>${WORDS[w]} ${w}</td></tr>`;
       classTSV+=`${i+1}\t${e.name}\t${fmtPts(e.pts)}\t${pct}\t${fmt(g)}\t${WORDS[w]} ${w}\n`;
+      classRows.push([i+1, e.name, e.pts, Math.round(e.pts/state.max*1000)/10, g, WORDS[w]+" "+w]);
     });
     $("classTable").innerHTML = html+"</tbody>";
-    const n=ok.length;
+    const n=ok.length; classStats = { n, avg: n? Math.round(sumWhole/n*100)/100 : null, pass: n? Math.round((n-counts[2])/n*100) : null, counts: {...counts} };
     $("classSummary").innerHTML = [
       ["Ученици", n],
       ["Среден успех", n?fmt(sumWhole/n):"–"],
@@ -528,6 +532,75 @@ tr.band-start td{border-top:2px solid var(--ink)}
     renderClass(); renderSaved(); $("testName").focus();
   }
   function setMsg(t){ const m=$("copyMsg"); m.textContent=t; clearTimeout(setMsg._t); setMsg._t=setTimeout(()=>m.textContent="", 4000); }
+
+
+  // ---------- Excel (.xlsx) без външни библиотеки ----------
+  const CRC = (()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+  function crc32(b){ let c=0xFFFFFFFF; for(let i=0;i<b.length;i++) c = CRC[(c^b[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+  function zip(files){ // [{name, data:Uint8Array}] — без компресия (STORE)
+    const enc=new TextEncoder(), parts=[], central=[]; let off=0;
+    const u16=v=>[v&255,(v>>>8)&255], u32=v=>[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];
+    for (const f of files){
+      const nm=enc.encode(f.name), crc=crc32(f.data), sz=f.data.length;
+      const head=new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(sz),...u32(sz),...u16(nm.length),...u16(0)]);
+      parts.push(head,nm,f.data);
+      central.push(new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0x0800),...u16(0),...u16(0),...u16(0x21),...u32(crc),...u32(sz),...u32(sz),...u16(nm.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)]), nm);
+      off += head.length+nm.length+sz;
+    }
+    const cdSize = central.reduce((a,b)=>a+b.length,0);
+    const end=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(cdSize),...u32(off),...u16(0)]);
+    return new Blob([...parts,...central,end],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  }
+  const xesc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,"");
+  function colName(i){ let s=""; i++; while(i){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; }
+  // rows: масив от редове; клетка = число, низ, null или {v, s} (s: 1 удебелено, 2 число с 2 знака, 3 число с 1 знак)
+  function makeXlsx(sheetName, rows, widths){
+    const enc=new TextEncoder();
+    let sd=""; rows.forEach((r,ri)=>{ sd+=`<row r="${ri+1}">`; r.forEach((c,ci)=>{
+      if (c===null || c===undefined || c==="") return;
+      const o = (typeof c==="object") ? c : {v:c}; const ref=colName(ci)+(ri+1); const st=o.s?` s="${o.s}"`:"";
+      if (typeof o.v==="number") sd+=`<c r="${ref}"${st}><v>${o.v}</v></c>`;
+      else sd+=`<c r="${ref}" t="inlineStr"${st}><is><t xml:space="preserve">${xesc(o.v)}</t></is></c>`;
+    }); sd+="</row>"; });
+    const cols = widths ? "<cols>"+widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("")+"</cols>" : "";
+    const X='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    const files = {
+      "[Content_Types].xml": X+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+      "_rels/.rels": X+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+      "xl/workbook.xml": X+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xesc(sheetName.slice(0,31).replace(/[\\\/?*\[\]:]/g," "))}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+      "xl/_rels/workbook.xml.rels": X+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+      "xl/styles.xml": X+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="0.00"/><numFmt numFmtId="165" formatCode="0.0"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
+      "xl/worksheets/sheet1.xml": X+`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${cols}<sheetData>${sd}</sheetData></worksheet>`
+    };
+    return zip(Object.entries(files).map(([name,txt])=>({name, data:enc.encode(txt)})));
+  }
+  function download(blob, name){
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }
+  const safeName = s => (s||"").replace(/[\\\/:*?"<>|]+/g," ").replace(/\s+/g," ").trim().slice(0,80);
+  const B = v => ({v, s:1});
+  function modelName(){ const m=MODELS.find(x=>x.id===state.model); return m ? m.name : ""; }
+  $("xlsTable").onclick = () => {
+    if (!tableRows.length) return;
+    const rows = [[B("Таблица точки → оценка")],["Модел:", modelName()],["Максимум точки:", state.max],[],
+      [B("Точки"),B("%"),B("Оценка"),B("С думи")],
+      ...tableRows.map(r=>[r[0],{v:r[1],s:3},{v:r[2],s:2},r[3]])];
+    download(makeXlsx("Таблица", rows, [16,10,10,18]), safeName(`Таблица ${modelName()} ${fmtPts(state.max)} т`)+".xlsx");
+    setMsg("Файлът е свален.");
+  };
+  $("xlsClass").onclick = () => {
+    if (!classRows.length){ setMsg("Няма ученици за сваляне."); return; }
+    const name = $("testName").value.trim() || "Резултати";
+    const st = classStats || {};
+    const rows = [[B(name)],["Модел:", modelName()],["Максимум точки:", state.max],["Дата:", new Date().toLocaleDateString("bg-BG")],[],
+      [B("№"),B("Ученик"),B("Точки"),B("%"),B("Оценка"),B("С думи")],
+      ...classRows.map(r=>[r[0],r[1],r[2],{v:r[3],s:3},{v:r[4],s:2},r[5]]),
+      [],[B("Ученици"),st.n],[B("Среден успех"),{v:st.avg,s:2}],[B("Взели (3+)"),(st.pass??"")+"%"],[],
+      ...[6,5,4,3,2].map(w=>[WORDS[w]+" "+w, (st.counts||{})[w]||0])];
+    download(makeXlsx(name, rows, [14,24,10,10,10,16]), safeName(name)+".xlsx");
+    setMsg("Файлът е свален.");
+  };
 
   $("saveTest").onclick = saveTest;
   $("newTest").onclick = newTest;
