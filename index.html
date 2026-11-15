@@ -363,8 +363,8 @@ tr.band-start td{border-top:2px solid var(--ink)}
     const groups=[]; rows.forEach(r=>{ const last=groups[groups.length-1]; if(last&&last.w===r.w) last.to=r.p; else groups.push({w:r.w, from:r.p, to:r.p}); });
     $("bands").innerHTML = groups.slice().reverse().map(gr=>
       `<span class="pill" style="background:${color(gr.w)}">${gr.w}</span><span>${WORDS[gr.w]}: ${fmtPts(gr.from)}${gr.to!==gr.from?" – "+fmtPts(gr.to):""} т.</span>`).join("");
-    let html = "<thead><tr><th>Точки</th><th>% от точките</th><th>Оценка</th><th></th></tr></thead><tbody>";
-    tableTSV = "Точки\t% от точките\tОценка\tС думи\n"; tableRows = []; let prevW=null;
+    let html = "<thead><tr><th>Точки</th><th>Решил % от теста</th><th>Оценка</th><th></th></tr></thead><tbody>";
+    tableTSV = "Точки\tРешил % от теста\tОценка\tС думи\n"; tableRows = []; let prevW=null;
     rows.slice().reverse().forEach(r=>{
       const pct = fmt(r.p/state.max*100,1);
       html += `<tr${prevW!==null&&prevW!==r.w?' class="band-start"':""}><td>${fmtPts(r.p)}</td><td>${pct}</td><td style="color:${color(r.w)};font-weight:600">${fmt(r.g)}</td><td>${WORDS[r.w]} ${r.w}</td></tr>`;
@@ -396,8 +396,8 @@ tr.band-start td{border-top:2px solid var(--ink)}
     const ok = list.filter(e=>!e.absent && isFinite(e.pts) && e.pts>=0 && e.pts<=state.max);
     const absent = list.filter(e=>e.absent).length;
     const counts={2:0,3:0,4:0,5:0,6:0}; let sumG=0, sumWhole=0;
-    let html="<thead><tr><th>№</th><th>Ученик</th><th>Точки</th><th>% от точките</th><th>Оценка</th><th></th></tr></thead><tbody>";
-    classTSV="№\tУченик\tТочки\t% от точките\tОценка\tС думи\n"; classRows = [];
+    let html="<thead><tr><th>№</th><th>Ученик</th><th>Точки</th><th>Решил % от теста</th><th>Оценка</th><th></th></tr></thead><tbody>";
+    classTSV="№\tУченик\tТочки\tРешил % от теста\tОценка\tС думи\n"; classRows = [];
     list.forEach((e,i)=>{
       if (e.absent){ html+=`<tr><td>${i+1}</td><td>${esc(e.name)}</td><td colspan="4" style="color:var(--muted)">неявил/а се</td></tr>`;
         classTSV+=`${i+1}\t${e.name}\tнеявил/а се\n`; classRows.push([i+1, e.name, "неявил/а се", null, null, null]); return; }
@@ -597,7 +597,7 @@ tr.band-start td{border-top:2px solid var(--ink)}
   $("xlsTable").onclick = () => {
     if (!tableRows.length) return;
     const rows = [[B("Таблица точки → оценка")],["Модел:", modelName()],["Максимум точки:", state.max],[],
-      [B("Точки"),B("% от точките"),B("Оценка"),B("С думи")],
+      [B("Точки"),B("Решил % от теста"),B("Оценка"),B("С думи")],
       ...tableRows.map(r=>[r[0],{v:r[1],s:3},{v:r[2],s:2},r[3]])];
     download(makeXlsx("Таблица", rows, [16,10,10,18]), safeName(`Таблица ${modelName()} ${fmtPts(state.max)} т`)+".xlsx");
     setMsg("Файлът е свален.");
@@ -615,7 +615,7 @@ tr.band-start td{border-top:2px solid var(--ink)}
       [B("Неявили се"), st.absent ? st.absent : "-"],
       [B("Взели (3+)"), n ? {v:(n-(cnt[2]||0))/n, s:4} : "-"],
       [],[B("Резултати по ученици")],
-      [B("№"),B("Ученик"),B("Точки"),B("% от точките"),B("Оценка"),B("С думи")],
+      [B("№"),B("Ученик"),B("Точки"),B("Решил % от теста"),B("Оценка"),B("С думи")],
       ...classRows.map(r=> r[4]===null ? [r[0],r[1],r[2]] : [r[0],r[1],r[2],{v:r[3],s:3},{v:r[4],s:2},r[5]])];
     download(makeXlsx(name, rows, [22,24,12,10,10,16]), safeName(name)+".xlsx");
     setMsg("Файлът е свален.");

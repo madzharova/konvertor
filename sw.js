@@ -1,5 +1,5 @@
 // Офлайн кеш за уеб версията (PWA). В Capacitor приложението файловете са вградени и това не е нужно.
-const CACHE = "tochki-ocenka-v4";
+const CACHE = "tochki-ocenka-v5";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png",
   "fonts/unbounded-cyrillic-500-normal.woff2", "fonts/unbounded-cyrillic-700-normal.woff2",
   "fonts/unbounded-latin-500-normal.woff2", "fonts/unbounded-latin-700-normal.woff2",
