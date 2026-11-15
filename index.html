@@ -116,6 +116,11 @@ tr.band-start td{border-top:2px solid var(--ink)}
 .sv button{border:1px solid var(--line);background:var(--surface);color:var(--ink);font:500 14px var(--font-body);padding:6px 10px;border-radius:8px;cursor:pointer}
 .sv button.del{color:var(--g2)}
 .sv button.del.confirm{background:var(--g2);color:#fff;border-color:var(--g2)}
+.credit{font-size:13px;color:var(--muted);text-align:center;padding-top:10px;border-top:1px solid var(--line)}
+.credit b{font-weight:600;color:var(--ink)}
+.credit{display:flex;flex-direction:column;align-items:center;gap:10px}
+.li-btn{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);font:600 14px var(--font-body);padding:8px 14px;border-radius:999px;text-decoration:none}
+.li-btn:hover,.li-btn:focus-visible{background:var(--accent);color:#fff}
 [hidden]{display:none !important}
 @media (prefers-reduced-motion: reduce){*{transition:none !important}}
 </style>
@@ -234,6 +239,10 @@ tr.band-start td{border-top:2px solid var(--ink)}
 
   <p class="note">Закръгляне: под 3,00 е Слаб 2; 3,00–3,49 е Среден 3; 3,50–4,49 е Добър 4; 4,50–5,49 е Много добър 5; от 5,50 е Отличен 6. Десетичната оценка се отрязва до стотни, за да не се закръгли 2,999 нагоре до 3,00.</p>
   <p class="note" id="copyMsg" role="status"></p>
+  <footer class="credit">
+    <span>Създаден от <b>Маргарита Маджарова</b>, учител по БЕЛ и френски език</span>
+    <a class="li-btn" href="https://www.linkedin.com/in/margarita-madzharova-259370216/" target="_blank" rel="noopener">Свържете се с мен в LinkedIn <span aria-hidden="true">↗</span></a>
+  </footer>
 </div>
 
 <script>
@@ -587,9 +596,18 @@ tr.band-start td{border-top:2px solid var(--ink)}
     };
     return zip(Object.entries(files).map(([name,txt])=>({name, data:enc.encode(txt)})));
   }
-  function download(blob, name){
+  async function download(blob, name){
+    // На телефон: системното меню „Сподели“ (Запази във Файлове, изпрати по имейл, Viber…)
+    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints>1 && /Macintosh/.test(navigator.userAgent));
+    if (mobile && navigator.canShare) {
+      try {
+        const file = new File([blob], name, {type: blob.type});
+        if (navigator.canShare({files:[file]})) { await navigator.share({files:[file], title:name}); return true; }
+      } catch(e) { if (e && e.name === "AbortError") return false; }
+    }
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name;
-    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 30000);
+    return true;
   }
   const safeName = s => (s||"").replace(/[\\\/:*?"<>|]+/g," ").replace(/\s+/g," ").trim().slice(0,80);
   const B = v => ({v, s:1});
@@ -599,8 +617,7 @@ tr.band-start td{border-top:2px solid var(--ink)}
     const rows = [[B("Таблица точки → оценка")],["Модел:", modelName()],["Максимум точки:", state.max],[],
       [B("Точки"),B("Решил % от теста"),B("Оценка"),B("С думи")],
       ...tableRows.map(r=>[r[0],{v:r[1],s:3},{v:r[2],s:2},r[3]])];
-    download(makeXlsx("Таблица", rows, [16,10,10,18]), safeName(`Таблица ${modelName()} ${fmtPts(state.max)} т`)+".xlsx");
-    setMsg("Файлът е свален.");
+    download(makeXlsx("Таблица", rows, [16,10,10,18]), safeName(`Таблица ${modelName()} ${fmtPts(state.max)} т`)+".xlsx").then(ok=>{ if(ok) setMsg("Файлът е готов."); });
   };
   $("xlsClass").onclick = () => {
     if (!classRows.length){ setMsg("Няма ученици за сваляне."); return; }
@@ -617,8 +634,7 @@ tr.band-start td{border-top:2px solid var(--ink)}
       [],[B("Резултати по ученици")],
       [B("№"),B("Ученик"),B("Точки"),B("Решил % от теста"),B("Оценка"),B("С думи")],
       ...classRows.map(r=> r[4]===null ? [r[0],r[1],r[2]] : [r[0],r[1],r[2],{v:r[3],s:3},{v:r[4],s:2},r[5]])];
-    download(makeXlsx(name, rows, [22,24,12,10,10,16]), safeName(name)+".xlsx");
-    setMsg("Файлът е свален.");
+    download(makeXlsx(name, rows, [22,24,12,10,10,16]), safeName(name)+".xlsx").then(ok=>{ if(ok) setMsg("Файлът е готов."); });
   };
 
   $("saveTest").onclick = saveTest;
