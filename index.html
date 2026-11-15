@@ -100,9 +100,10 @@ tr.band-start td{border-top:2px solid var(--ink)}
 .btn{border:0;background:var(--accent);color:#fff;font:600 15px var(--font-body);padding:10px 14px;border-radius:10px;cursor:pointer}
 .btn.ghost{background:var(--accent-soft);color:var(--accent)}
 .dist{display:flex;flex-direction:column;gap:5px}
-.dist .d{display:grid;grid-template-columns:110px 1fr 28px;gap:8px;align-items:center;font-size:14px}
+.dist .d{display:grid;grid-template-columns:104px 1fr 26px 62px;gap:8px;align-items:center;font-size:14px;font-variant-numeric:tabular-nums}
+.dist .d .pc{text-align:right;color:var(--muted)}
 .dist .db{height:12px;border-radius:4px}
-.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
 .stat{background:var(--bg);border-radius:10px;padding:10px}
 .stat .v{font:700 22px var(--font-display);font-variant-numeric:tabular-nums}
 .stat .k{font-size:12px;color:var(--muted)}
@@ -213,7 +214,7 @@ tr.band-start td{border-top:2px solid var(--ink)}
       <div class="saved" id="savedList"><p class="note">Още няма запазени тестове.</p></div>
     </div>
     <div class="field">
-      <label for="classIn">Точки на учениците: по един на ред (може с име отпред) или само числа, разделени с интервал</label>
+      <label for="classIn">Точки на учениците: по един на ред (може с име отпред) или само числа, разделени с интервал. За неявил се ученик напишете името и „н“, например „Иван н“</label>
       <textarea id="classIn">Иван 52
 Мария 38,5
 Петър 27
@@ -380,18 +381,26 @@ tr.band-start td{border-top:2px solid var(--ink)}
     text.split(/\n/).forEach(line=>{
       const t=line.trim(); if(!t) return;
       if (/^[\d\s.,;\-]+$/.test(t)){ (t.match(re)||[]).forEach(n=>entries.push({name:"", pts:num(n)})); }
-      else { const nums=t.match(re); if(!nums) return; const last=nums[nums.length-1]; const name=t.slice(0, t.lastIndexOf(last)).replace(/[\s:;,\-–]+$/,"").trim(); entries.push({name, pts:num(last)}); }
+      else {
+        if (!/\d/.test(t)) { // без точки = неявил/а се ("Иван н", "Иван -", "Иван отс." или само името)
+          const name = t.replace(/[\s:;,]+(?:[-–]|н|н\.?\s?я\.?|отс\.?|отсъства|неявил[аи]?(?:\s+се)?)$/i,"").replace(/[\s:;,\-–]+$/,"").trim();
+          entries.push({name: name || t, absent:true}); return;
+        }
+        const nums=t.match(re); if(!nums) return; const last=nums[nums.length-1]; const name=t.slice(0, t.lastIndexOf(last)).replace(/[\s:;,\-–]+$/,"").trim(); entries.push({name, pts:num(last)}); }
     });
     return entries;
   }
   function renderClass(){
     const m = MODELS.find(x=>x.id===state.model);
     const list = parseClass($("classIn").value);
-    const ok = list.filter(e=>isFinite(e.pts) && e.pts>=0 && e.pts<=state.max);
+    const ok = list.filter(e=>!e.absent && isFinite(e.pts) && e.pts>=0 && e.pts<=state.max);
+    const absent = list.filter(e=>e.absent).length;
     const counts={2:0,3:0,4:0,5:0,6:0}; let sumG=0, sumWhole=0;
     let html="<thead><tr><th>№</th><th>Ученик</th><th>Точки</th><th>%</th><th>Оценка</th><th></th></tr></thead><tbody>";
     classTSV="№\tУченик\tТочки\t%\tОценка\tС думи\n"; classRows = [];
     list.forEach((e,i)=>{
+      if (e.absent){ html+=`<tr><td>${i+1}</td><td>${esc(e.name)}</td><td colspan="4" style="color:var(--muted)">неявил/а се</td></tr>`;
+        classTSV+=`${i+1}\t${e.name}\tнеявил/а се\n`; classRows.push([i+1, e.name, "неявил/а се", null, null, null]); return; }
       const bad = !(isFinite(e.pts) && e.pts>=0 && e.pts<=state.max);
       if (bad){ html+=`<tr><td>${i+1}</td><td>${esc(e.name)}</td><td>${fmtPts(e.pts)}</td><td colspan="3" style="color:var(--g2)">над максимума</td></tr>`; return; }
       const g=gradeOf(m,e.pts,state.max), w=whole(g); counts[w]++; sumG+=g; sumWhole+=w;
@@ -401,14 +410,18 @@ tr.band-start td{border-top:2px solid var(--ink)}
       classRows.push([i+1, e.name, e.pts, Math.round(e.pts/state.max*1000)/10, g, WORDS[w]+" "+w]);
     });
     $("classTable").innerHTML = html+"</tbody>";
-    const n=ok.length; classStats = { n, avg: n? Math.round(sumWhole/n*100)/100 : null, pass: n? Math.round((n-counts[2])/n*100) : null, counts: {...counts} };
+    const n=ok.length; classStats = { n, absent, total:n+absent, avg: n? Math.round(sumWhole/n*100)/100 : null, pass: n? Math.round((n-counts[2])/n*100) : null, counts: {...counts} };
+    const pc = w => n ? counts[w]/n*100 : 0;
+    classTSV += `\nКоличествен анализ\nОценка\tБрой оценки\t% оценки\n` + [2,3,4,5,6].map(w=>`${WORDS[w]}\t${counts[w]}\t${fmt(pc(w))}%`).join("\n")
+      + `\nСреден успех\t${n?fmt(sumWhole/n):"-"}\nБрой ученици в клас\t${n+absent}\nНеявили се\t${absent||"-"}\n`;
     $("classSummary").innerHTML = [
-      ["Ученици", n],
+      ["Явили се", n],
+      ["Неявили се", absent||"–"],
       ["Среден успех", n?fmt(sumWhole/n):"–"],
       ["Взели (3+)", n?Math.round((n-counts[2])/n*100)+"%":"–"],
     ].map(([k,v])=>`<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
     const mx=Math.max(1,...Object.values(counts));
-    $("classDist").innerHTML=[6,5,4,3,2].map(w=>`<div class="d"><span>${WORDS[w]} ${w}</span><div class="db" style="width:${counts[w]/mx*100}%;background:${color(w)};min-width:${counts[w]?4:0}px"></div><span>${counts[w]}</span></div>`).join("");
+    $("classDist").innerHTML=[2,3,4,5,6].map(w=>`<div class="d"><span>${WORDS[w]} ${w}</span><div class="db" style="width:${counts[w]/mx*100}%;background:${color(w)};min-width:${counts[w]?4:0}px"></div><span>${counts[w]}</span><span class="pc">${fmt(pc(w))}%</span></div>`).join("");
   }
   function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
@@ -569,7 +582,7 @@ tr.band-start td{border-top:2px solid var(--ink)}
       "_rels/.rels": X+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
       "xl/workbook.xml": X+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xesc(sheetName.slice(0,31).replace(/[\\\/?*\[\]:]/g," "))}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
       "xl/_rels/workbook.xml.rels": X+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
-      "xl/styles.xml": X+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="0.00"/><numFmt numFmtId="165" formatCode="0.0"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
+      "xl/styles.xml": X+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="3"><numFmt numFmtId="164" formatCode="0.00"/><numFmt numFmtId="165" formatCode="0.0"/><numFmt numFmtId="166" formatCode="0.00%"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
       "xl/worksheets/sheet1.xml": X+`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${cols}<sheetData>${sd}</sheetData></worksheet>`
     };
     return zip(Object.entries(files).map(([name,txt])=>({name, data:enc.encode(txt)})));
@@ -592,13 +605,19 @@ tr.band-start td{border-top:2px solid var(--ink)}
   $("xlsClass").onclick = () => {
     if (!classRows.length){ setMsg("Няма ученици за сваляне."); return; }
     const name = $("testName").value.trim() || "Резултати";
-    const st = classStats || {};
+    const st = classStats || {}, n = st.n||0, cnt = st.counts||{};
     const rows = [[B(name)],["Модел:", modelName()],["Максимум точки:", state.max],["Дата:", new Date().toLocaleDateString("bg-BG")],[],
+      [B("Количествен анализ")],
+      [B("Оценка"),B("Брой оценки"),B("% оценки")],
+      ...[2,3,4,5,6].map(w=>[WORDS[w], cnt[w]||0, {v: n ? Math.round((cnt[w]||0)/n*10000)/10000 : 0, s:4}]),
+      [B("Среден успех"), n ? {v:st.avg, s:2} : "-"],
+      [B("Брой ученици в клас"), st.total||0],
+      [B("Неявили се"), st.absent ? st.absent : "-"],
+      [B("Взели (3+)"), n ? {v:(n-(cnt[2]||0))/n, s:4} : "-"],
+      [],[B("Резултати по ученици")],
       [B("№"),B("Ученик"),B("Точки"),B("%"),B("Оценка"),B("С думи")],
-      ...classRows.map(r=>[r[0],r[1],r[2],{v:r[3],s:3},{v:r[4],s:2},r[5]]),
-      [],[B("Ученици"),st.n],[B("Среден успех"),{v:st.avg,s:2}],[B("Взели (3+)"),(st.pass??"")+"%"],[],
-      ...[6,5,4,3,2].map(w=>[WORDS[w]+" "+w, (st.counts||{})[w]||0])];
-    download(makeXlsx(name, rows, [14,24,10,10,10,16]), safeName(name)+".xlsx");
+      ...classRows.map(r=> r[4]===null ? [r[0],r[1],r[2]] : [r[0],r[1],r[2],{v:r[3],s:3},{v:r[4],s:2},r[5]])];
+    download(makeXlsx(name, rows, [22,24,12,10,10,16]), safeName(name)+".xlsx");
     setMsg("Файлът е свален.");
   };
 
